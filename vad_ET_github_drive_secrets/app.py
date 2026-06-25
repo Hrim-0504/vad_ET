@@ -425,7 +425,7 @@ def page_video(video_items: list):
             <div class="body-text" style="text-align:center;">
                 영상 재생 시작 버튼을 누르면 마우스 커서가 사라지고,<br>
                 고정점이 1000ms 동안 제시된 뒤 영상이 나타납니다.<br>
-                영상이 끝날 때까지 시청해 주세요.
+                영상이 끝나면 <b>스페이스바</b>를 눌러 다음 페이지로 이동해 주세요.
             </div>
         </div>
         """,
@@ -440,12 +440,22 @@ def page_video(video_items: list):
         border-radius:16px;
         overflow:hidden;
         background:#ffffff;
+        position:relative;
         display:flex;
         align-items:center;
         justify-content:center;
         text-align:center;
     ">
-        <div id="startScreen">
+        <div id="startScreen" style="
+            position:absolute;
+            inset:0;
+            display:flex;
+            align-items:center;
+            justify-content:center;
+            flex-direction:column;
+            background:#ffffff;
+            z-index:5;
+        ">
             <button
                 id="startVideoButton"
                 type="button"
@@ -468,14 +478,16 @@ def page_video(video_items: list):
 
         <div id="fixationScreen" style="
             display:none;
-            width:100%;
-            height:100%;
+            position:absolute;
+            inset:0;
             align-items:center;
             justify-content:center;
             font-size:60px;
             font-weight:800;
             color:#111827;
+            background:#ffffff;
             cursor:none;
+            z-index:6;
         ">
             +
         </div>
@@ -487,8 +499,25 @@ def page_video(video_items: list):
             height="500"
             allow="autoplay; fullscreen"
             allowfullscreen
-            style="border:0; display:none; background:#000; cursor:none;">
+            style="
+                border:0;
+                display:none;
+                background:#000;
+                cursor:none;
+                position:absolute;
+                inset:0;
+                z-index:1;
+            ">
         </iframe>
+
+        <div id="cursorBlocker" style="
+            display:none;
+            position:absolute;
+            inset:0;
+            z-index:4;
+            cursor:none;
+            background:rgba(255,255,255,0);
+        "></div>
     </div>
 
     <script>
@@ -497,29 +526,54 @@ def page_video(video_items: list):
         const fixationScreen = document.getElementById("fixationScreen");
         const videoFrame = document.getElementById("driveVideoFrame");
         const videoStage = document.getElementById("videoStage");
+        const cursorBlocker = document.getElementById("cursorBlocker");
+
+        let videoStarted = false;
 
         function hideCursor() {{
             videoStage.style.cursor = "none";
             fixationScreen.style.cursor = "none";
             videoFrame.style.cursor = "none";
+            cursorBlocker.style.cursor = "none";
 
             try {{
                 window.parent.document.documentElement.classList.add("vad-hide-cursor");
                 window.parent.document.body.classList.add("vad-hide-cursor");
-            }} catch (e) {{
-                // Streamlit component iframe 환경에 따라 parent 접근이 막힐 수 있습니다.
-            }}
+            }} catch (e) {{}}
         }}
 
         function showCursor() {{
             videoStage.style.cursor = "default";
+            cursorBlocker.style.display = "none";
 
             try {{
                 window.parent.document.documentElement.classList.remove("vad-hide-cursor");
                 window.parent.document.body.classList.remove("vad-hide-cursor");
-            }} catch (e) {{
-                // Streamlit component iframe 환경에 따라 parent 접근이 막힐 수 있습니다.
-            }}
+            }} catch (e) {{}}
+        }}
+
+        function clickNextButton() {{
+            showCursor();
+
+            try {{
+                const buttons = Array.from(window.parent.document.querySelectorAll("button"));
+                const nextButton = buttons.find(function(btn) {{
+                    return btn.innerText && btn.innerText.includes("다음 페이지로 이동");
+                }});
+                if (nextButton) {{
+                    nextButton.click();
+                }}
+            }} catch (e) {{}}
+        }}
+
+        function handleSpacebar(event) {{
+            const isSpace = event.code === "Space" || event.key === " " || event.key === "Spacebar";
+            if (!isSpace) return;
+            if (!videoStarted) return;
+
+            event.preventDefault();
+            event.stopPropagation();
+            clickNextButton();
         }}
 
         // 페이지가 새로 로드될 때는 커서를 보이게 초기화합니다.
@@ -527,6 +581,7 @@ def page_video(video_items: list):
 
         startButton.addEventListener("click", function() {{
             startScreen.style.display = "none";
+            videoStarted = true;
 
             hideCursor();
 
@@ -537,11 +592,20 @@ def page_video(video_items: list):
                 videoFrame.style.display = "block";
                 videoFrame.src = videoFrame.dataset.src;
 
+                // Google Drive iframe 위에서는 내부 커서가 다시 보일 수 있으므로
+                // 투명 레이어를 위에 올려 커서를 계속 숨깁니다.
+                cursorBlocker.style.display = "block";
+
                 hideCursor();
             }}, 1000);
         }});
 
-        // 사용자가 다음 페이지로 이동하면 커서가 다시 보이도록 정리합니다.
+        document.addEventListener("keydown", handleSpacebar);
+
+        try {{
+            window.parent.document.addEventListener("keydown", handleSpacebar);
+        }} catch (e) {{}}
+
         window.addEventListener("beforeunload", showCursor);
         window.addEventListener("pagehide", showCursor);
     </script>
@@ -551,16 +615,15 @@ def page_video(video_items: list):
     st.markdown(
         """
         <div class="small-muted">
-        Google Drive 권한이 제한되어 있으면, 참가자가 공유받은 Google 계정으로 로그인해야 영상이 보입니다.<br>
-        일부 브라우저에서는 자동재생이 제한되어 영상 화면 안의 재생 버튼을 한 번 더 눌러야 할 수 있습니다.<br>
-        Google Drive 미리보기 방식은 영상 종료 이벤트를 Streamlit으로 직접 전달하지 못하므로,
-        영상이 끝난 뒤 아래 버튼을 누르면 다음 페이지에서 커서가 다시 보입니다.
+        영상이 끝나면 <b>스페이스바</b>를 눌러 설문 페이지로 이동해 주세요.<br>
+        Google Drive 미리보기 방식은 영상 종료 이벤트를 Streamlit으로 직접 전달하기 어렵기 때문에,
+        스페이스바 입력을 다음 페이지 이동 신호로 사용합니다.
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    if st.button("영상을 끝까지 봤습니다", type="primary"):
+    if st.button("다음 페이지로 이동", type="primary", key=f"space_next_round_{round_number}"):
         go_to("survey")
 
 def image_if_exists(path: Path, caption: str):
