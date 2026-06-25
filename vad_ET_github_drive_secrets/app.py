@@ -201,6 +201,28 @@ def get_randomize_videos() -> bool:
     return str(value).lower() in ["true", "1", "yes", "y"]
 
 
+def get_video_duration_seconds(video_key: str) -> int:
+    """영상 종료 안내를 띄우기 위한 재생 시간입니다.
+
+    Google Drive iframe은 보안 제한 때문에 실제 종료 이벤트를 직접 읽기 어렵습니다.
+    그래서 기본값 또는 영상별 설정값을 초 단위 타이머로 사용합니다.
+    """
+    try:
+        default_duration = int(get_app_setting("video_duration_seconds", 90))
+    except Exception:
+        default_duration = 90
+
+    duration = default_duration
+    try:
+        durations = dict(st.secrets.get("video_durations", {}))
+        if video_key in durations:
+            duration = int(durations[video_key])
+    except Exception:
+        pass
+
+    return max(1, min(int(duration), 3600))
+
+
 def make_drive_preview_url(file_id: str) -> str:
     return f"https://drive.google.com/file/d/{file_id}/preview"
 
@@ -273,13 +295,21 @@ def page_missing_secrets():
         """[app]
 sets_per_block = 25
 randomize_videos = true
-video_height = 580
-video_width_percent = 70
+video_height = 620
+video_width_percent = 65
+video_duration_seconds = 90
 
 [videos]
 video_001 = "Google Drive 파일 ID 또는 공유 링크"
 video_002 = "Google Drive 파일 ID 또는 공유 링크"
-video_003 = "Google Drive 파일 ID 또는 공유 링크""",
+video_003 = "Google Drive 파일 ID 또는 공유 링크"
+
+# 영상별 길이가 다르면 아래처럼 따로 넣어주세요.
+# 단위는 초입니다.
+[video_durations]
+video_001 = 90
+video_002 = 90
+video_003 = 90""",
         language="toml",
     )
     st.markdown("</div>", unsafe_allow_html=True)
@@ -339,6 +369,7 @@ def page_demographics():
             max_value=120,
             value=None,
             step=1,
+            format="%d",
             placeholder="나이를 숫자로 입력하세요",
         )
         submitted = st.form_submit_button("다음", type="primary")
@@ -420,24 +451,23 @@ def page_video(video_items: list):
     preview_url = make_drive_preview_url(video["file_id"])
     autoplay_url = f"{preview_url}?autoplay=1"
 
-    # Google Drive 플레이어의 하단 컨트롤바가 영상 위를 덮는 문제를 줄이기 위해
-    # 영상 박스는 높게 유지하고, 실제 영상 iframe의 가로 폭은 조금 좁혀서
-    # 하단 컨트롤바가 영상 내용과 덜 겹치도록 합니다.
-    # 이번 버전은 영상의 가로 폭과 세로 높이를 모두 더 작게 줄였습니다.
+    # Google Drive 플레이어의 하단 게이지 바가 영상 내용과 덜 겹치도록
+    # 실제 iframe의 가로 폭은 더 줄이고, 플레이어 박스의 세로 여백을 조금 늘렸습니다.
     # 필요하면 Streamlit Secrets의 [app] 아래에서 조절할 수 있습니다.
-    # 예: video_height = 560, video_width_percent = 70
+    # 예: video_height = 620, video_width_percent = 65, video_duration_seconds = 90
     try:
-        video_height = int(get_app_setting("video_height", 560))
+        video_height = int(get_app_setting("video_height", 620))
     except Exception:
-        video_height = 560
+        video_height = 620
 
     try:
-        video_width_percent = int(get_app_setting("video_width_percent", 70))
+        video_width_percent = int(get_app_setting("video_width_percent", 65))
     except Exception:
-        video_width_percent = 70
+        video_width_percent = 65
 
     # 너무 작거나 너무 커지는 것을 방지합니다.
     video_width_percent = max(45, min(video_width_percent, 100))
+    video_duration_seconds = get_video_duration_seconds(video["key"])
 
     component_height = video_height + 30
 
@@ -448,7 +478,7 @@ def page_video(video_items: list):
             <div class="body-text" style="text-align:center;">
                 영상 재생 시작 버튼을 누르면 마우스 커서가 사라지고,<br>
                 고정점이 1000ms 동안 제시된 뒤 Google Drive 영상이 표시됩니다.<br>
-                영상이 끝나면 <b>스페이스바</b>를 눌러 다음 페이지로 이동해 주세요.
+                영상을 끝까지 시청해 주세요.
             </div>
         </div>
         """,
@@ -456,7 +486,7 @@ def page_video(video_items: list):
     )
 
     video_stage_html = f"""
-    <div id="videoStage" style="
+    <div id="videoStage" tabindex="0" style="
         width:100%;
         height:{video_height}px;
         border:1px solid #d1d5db;
@@ -468,6 +498,7 @@ def page_video(video_items: list):
         align-items:center;
         justify-content:center;
         text-align:center;
+        outline:none;
     ">
         <div id="startScreen" style="
             position:absolute;
@@ -549,6 +580,28 @@ def page_video(video_items: list):
             cursor:none;
             background:rgba(0,0,0,0);
         "></div>
+
+        <div id="endMessage" style="
+            display:none;
+            position:absolute;
+            left:50%;
+            top:50%;
+            transform:translate(-50%, -50%);
+            z-index:20;
+            padding:22px 26px;
+            border-radius:18px;
+            background:rgba(255,255,255,0.94);
+            border:1px solid #d1d5db;
+            box-shadow:0 10px 28px rgba(15, 23, 42, 0.22);
+            color:#111827;
+            font-size:20px;
+            font-weight:900;
+            line-height:1.7;
+            word-break:keep-all;
+        ">
+            영상이 끝났습니다.<br>
+            스페이스바를 눌러 설문 페이지로 이동해 주세요.
+        </div>
     </div>
 
     <script>
@@ -558,8 +611,12 @@ def page_video(video_items: list):
         const videoFrame = document.getElementById("driveVideoFrame");
         const videoStage = document.getElementById("videoStage");
         const cursorBlocker = document.getElementById("cursorBlocker");
+        const endMessage = document.getElementById("endMessage");
 
         let videoStarted = false;
+        let videoEnded = false;
+        let endTimer = null;
+        const videoDurationMs = {video_duration_seconds * 1000};
 
         function hideCursor() {{
             videoStage.style.cursor = "none";
@@ -583,6 +640,12 @@ def page_video(video_items: list):
             }} catch (e) {{}}
         }}
 
+        function markVideoEnded() {{
+            videoEnded = true;
+            endMessage.style.display = "block";
+            showCursor();
+        }}
+
         function clickNextButton() {{
             showCursor();
 
@@ -600,7 +663,12 @@ def page_video(video_items: list):
         function handleSpacebar(event) {{
             const isSpace = event.code === "Space" || event.key === " " || event.key === "Spacebar";
             if (!isSpace) return;
-            if (!videoStarted) return;
+
+            if (!videoStarted || !videoEnded) {{
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+            }}
 
             event.preventDefault();
             event.stopPropagation();
@@ -611,7 +679,10 @@ def page_video(video_items: list):
 
         startButton.addEventListener("click", function() {{
             startScreen.style.display = "none";
+            videoStage.focus();
             videoStarted = true;
+            videoEnded = false;
+            endMessage.style.display = "none";
 
             hideCursor();
             fixationScreen.style.display = "flex";
@@ -623,14 +694,20 @@ def page_video(video_items: list):
                 videoFrame.src = videoFrame.dataset.src;
 
                 cursorBlocker.style.display = "block";
+                videoStage.focus();
                 hideCursor();
+
+                if (endTimer) {{
+                    clearTimeout(endTimer);
+                }}
+                endTimer = setTimeout(markVideoEnded, videoDurationMs);
             }}, 1000);
         }});
 
         cursorBlocker.addEventListener("mousemove", hideCursor);
         cursorBlocker.addEventListener("mouseenter", hideCursor);
         videoStage.addEventListener("mousemove", function() {{
-            if (videoStarted) hideCursor();
+            if (videoStarted && !videoEnded) hideCursor();
         }});
 
         document.addEventListener("keydown", handleSpacebar);
@@ -645,18 +722,18 @@ def page_video(video_items: list):
     """
     components.html(video_stage_html, height=component_height)
 
+    # 사용자에게 보이는 다음 버튼은 숨기고, 영상 종료 뒤 스페이스바 입력 시
+    # 자바스크립트가 이 숨겨진 버튼을 눌러 Streamlit 페이지를 이동시킵니다.
     st.markdown(
-        f"""
-        <div class="small-muted">
-        영상이 끝나면 <b>스페이스바</b>를 눌러 설문 페이지로 이동해 주세요.<br>
-        현재 영상 박스 높이: <b>{video_height}px</b><br>
-        현재 영상 가로 폭: <b>{video_width_percent}%</b><br>
-        Google Drive 컨트롤바는 완전히 제거하기 어렵기 때문에, 영상의 가로 폭과 세로 높이를 함께 줄였습니다.
-        </div>
+        """
+        <style>
+        div[data-testid="stButton"] {
+            display: none !important;
+        }
+        </style>
         """,
         unsafe_allow_html=True,
     )
-
     if st.button("다음 페이지로 이동", type="primary", key=f"space_next_round_{round_number}"):
         go_to("survey")
 
