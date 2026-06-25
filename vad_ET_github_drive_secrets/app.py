@@ -205,6 +205,12 @@ def make_drive_preview_url(file_id: str) -> str:
     return f"https://drive.google.com/file/d/{file_id}/preview"
 
 
+def make_drive_direct_url(file_id: str) -> str:
+    # Google Drive 파일을 HTML video 태그의 source로 직접 넣기 위한 URL입니다.
+    # Drive 파일 공유 권한이 있어야 하고, 파일 크기/계정/브라우저 정책에 따라 실패할 수 있습니다.
+    return f"https://drive.google.com/uc?export=download&id={file_id}"
+
+
 def current_block_number(round_index_zero_based: int) -> int:
     return (round_index_zero_based // get_sets_per_block()) + 1
 
@@ -415,8 +421,10 @@ def page_video(video_items: list):
     round_number = st.session_state.round_index + 1
     total_rounds = len(video_items)
     video = current_video(video_items)
-    preview_url = make_drive_preview_url(video["file_id"])
-    autoplay_url = f"{preview_url}?autoplay=1"
+
+    # Drive preview iframe이 아니라, Google Drive 파일을 직접 video source로 넣는 방식입니다.
+    # 이 방식은 컨트롤바를 숨길 수 있지만, Drive 파일 권한/용량/브라우저 정책에 따라 재생이 막힐 수 있습니다.
+    direct_url = make_drive_direct_url(video["file_id"])
 
     st.markdown(
         f"""
@@ -424,8 +432,8 @@ def page_video(video_items: list):
             <div class="center-title">영상 {round_number} / {total_rounds}</div>
             <div class="body-text" style="text-align:center;">
                 영상 재생 시작 버튼을 누르면 마우스 커서가 사라지고,<br>
-                고정점이 1000ms 동안 제시된 뒤 Google Drive 영상이 전체 영역에 표시됩니다.<br>
-                영상이 끝나면 <b>스페이스바</b>를 눌러 다음 페이지로 이동해 주세요.
+                고정점이 1000ms 동안 제시된 뒤 영상이 자동으로 재생됩니다.<br>
+                영상이 끝나면 마우스 커서가 다시 보이고, <b>스페이스바</b>를 눌러 다음 페이지로 이동합니다.
             </div>
         </div>
         """,
@@ -492,56 +500,76 @@ def page_video(video_items: list):
             +
         </div>
 
-        <iframe
-            id="driveVideoFrame"
-            data-src="{autoplay_url}"
-            width="100%"
-            height="500"
-            allow="autoplay; fullscreen"
-            allowfullscreen
+        <video
+            id="stimulusVideo"
+            playsinline
+            preload="auto"
             style="
-                border:0;
                 display:none;
-                background:#000;
+                width:100%;
+                height:100%;
+                object-fit:contain;
+                background:#000000;
                 cursor:none;
-                position:absolute;
-                inset:0;
-                z-index:1;
             ">
-        </iframe>
+            <source src="{direct_url}" type="video/mp4">
+            브라우저가 이 영상을 재생할 수 없습니다.
+        </video>
 
-        <!--
-        이 투명 레이어는 영상을 자르거나 가리지 않습니다.
-        역할:
-        1) iframe 위에서 마우스 커서를 계속 숨김
-        2) 마우스 hover로 Google Drive 컨트롤바가 다시 뜨는 것을 줄임
-        3) 스페이스바 입력은 그대로 받을 수 있게 함
-        -->
-        <div id="cursorBlocker" style="
+        <div id="finishMessage" style="
             display:none;
             position:absolute;
             inset:0;
-            z-index:5;
-            cursor:none;
-            background:rgba(0,0,0,0);
-        "></div>
+            align-items:center;
+            justify-content:center;
+            flex-direction:column;
+            background:rgba(255,255,255,0.92);
+            color:#111827;
+            font-size:22px;
+            font-weight:800;
+            line-height:1.8;
+            z-index:12;
+        ">
+            영상 시청이 완료되었습니다.<br>
+            스페이스바를 눌러 다음 페이지로 이동해 주세요.
+        </div>
+
+        <div id="errorMessage" style="
+            display:none;
+            position:absolute;
+            inset:0;
+            align-items:center;
+            justify-content:center;
+            flex-direction:column;
+            background:#fff1f2;
+            color:#be123c;
+            font-size:18px;
+            font-weight:800;
+            line-height:1.8;
+            padding:20px;
+            z-index:13;
+        ">
+            Google Drive 직접 재생을 불러오지 못했습니다.<br>
+            Drive 파일 권한 또는 직접 재생 제한을 확인해 주세요.
+        </div>
     </div>
 
     <script>
         const startButton = document.getElementById("startVideoButton");
         const startScreen = document.getElementById("startScreen");
         const fixationScreen = document.getElementById("fixationScreen");
-        const videoFrame = document.getElementById("driveVideoFrame");
         const videoStage = document.getElementById("videoStage");
-        const cursorBlocker = document.getElementById("cursorBlocker");
+        const video = document.getElementById("stimulusVideo");
+        const finishMessage = document.getElementById("finishMessage");
+        const errorMessage = document.getElementById("errorMessage");
 
         let videoStarted = false;
+        let videoEnded = false;
 
         function hideCursor() {{
             videoStage.style.cursor = "none";
             fixationScreen.style.cursor = "none";
-            videoFrame.style.cursor = "none";
-            cursorBlocker.style.cursor = "none";
+            video.style.cursor = "none";
 
             try {{
                 window.parent.document.documentElement.classList.add("vad-hide-cursor");
@@ -551,7 +579,7 @@ def page_video(video_items: list):
 
         function showCursor() {{
             videoStage.style.cursor = "default";
-            cursorBlocker.style.display = "none";
+            video.style.cursor = "default";
 
             try {{
                 window.parent.document.documentElement.classList.remove("vad-hide-cursor");
@@ -576,7 +604,7 @@ def page_video(video_items: list):
         function handleSpacebar(event) {{
             const isSpace = event.code === "Space" || event.key === " " || event.key === "Spacebar";
             if (!isSpace) return;
-            if (!videoStarted) return;
+            if (!videoEnded) return;
 
             event.preventDefault();
             event.stopPropagation();
@@ -588,27 +616,43 @@ def page_video(video_items: list):
         startButton.addEventListener("click", function() {{
             startScreen.style.display = "none";
             videoStarted = true;
+            videoEnded = false;
 
             hideCursor();
             fixationScreen.style.display = "flex";
 
             setTimeout(function() {{
                 fixationScreen.style.display = "none";
-
-                videoFrame.style.display = "block";
-                videoFrame.src = videoFrame.dataset.src;
-
-                // 영상은 자르지 않고 그대로 둔 채, 투명 레이어만 올립니다.
-                cursorBlocker.style.display = "block";
-
+                video.style.display = "block";
                 hideCursor();
+
+                video.currentTime = 0;
+                video.play().then(function() {{
+                    hideCursor();
+                }}).catch(function() {{
+                    showCursor();
+                    errorMessage.style.display = "flex";
+                }});
             }}, 1000);
         }});
 
-        cursorBlocker.addEventListener("mousemove", hideCursor);
-        cursorBlocker.addEventListener("mouseenter", hideCursor);
-        videoStage.addEventListener("mousemove", function() {{
-            if (videoStarted) hideCursor();
+        video.addEventListener("playing", function() {{
+            hideCursor();
+        }});
+
+        video.addEventListener("mousemove", function() {{
+            if (videoStarted && !videoEnded) hideCursor();
+        }});
+
+        video.addEventListener("ended", function() {{
+            videoEnded = true;
+            showCursor();
+            finishMessage.style.display = "flex";
+        }});
+
+        video.addEventListener("error", function() {{
+            showCursor();
+            errorMessage.style.display = "flex";
         }});
 
         document.addEventListener("keydown", handleSpacebar);
@@ -626,8 +670,9 @@ def page_video(video_items: list):
     st.markdown(
         """
         <div class="small-muted">
-        영상이 끝나면 <b>스페이스바</b>를 눌러 설문 페이지로 이동해 주세요.<br>
-        영상은 자르지 않고 Google Drive 미리보기 화면을 그대로 표시합니다.
+        이 버전은 Google Drive 파일을 <code>video</code> 태그로 직접 재생하려고 시도합니다.<br>
+        성공하면 Google Drive 플레이어 컨트롤바가 보이지 않습니다.<br>
+        단, Google Drive 파일 권한, 파일 크기, 브라우저 정책에 따라 직접 재생이 막힐 수 있습니다.
         </div>
         """,
         unsafe_allow_html=True,
