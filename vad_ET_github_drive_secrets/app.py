@@ -207,6 +207,8 @@ def save_response(row: dict):
     fieldnames = [
         "timestamp",
         "participant_id",
+        "gender",
+        "age",
         "round_number",
         "block_number",
         "video_key",
@@ -237,7 +239,7 @@ def init_experiment(participant_id: str, video_items: list):
     st.session_state.participant_id = participant_id
     st.session_state.video_order = order
     st.session_state.round_index = 0
-    st.session_state.page = "experiment_info"
+    st.session_state.page = "demographics"
 
 
 def current_video(video_items: list):
@@ -284,21 +286,66 @@ def page_participant_start(video_items: list):
         총 영상 수: <b>{len(video_items)}</b>개<br>
         각 영상 시청 후 쾌락, 각성, 통제 차원을 1점부터 9점까지 평가합니다.
         </div>
+        <div class="section-box">
+            참가자 번호는 문자로 보내드린 번호를 입력해주시면 됩니다.
+        </div>
         """,
         unsafe_allow_html=True,
     )
     st.markdown("</div>", unsafe_allow_html=True)
 
     with st.form("participant_form"):
-        participant_id = st.text_input("참가자 ID를 입력하세요", placeholder="예: P001")
-        submitted = st.form_submit_button("실험 시작")
+        participant_id = st.text_input("참가자 번호를 입력하세요", placeholder="예: P001")
+        submitted = st.form_submit_button("다음")
 
     if submitted:
         if not participant_id.strip():
-            st.error("참가자 ID를 입력해 주세요.")
+            st.error("참가자 번호를 입력해 주세요.")
         else:
             init_experiment(participant_id.strip(), video_items)
             st.rerun()
+
+
+def page_demographics():
+    st.markdown('<div class="main-card">', unsafe_allow_html=True)
+    st.markdown('<div class="center-title">기본 정보 입력</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="body-text" style="text-align:center;">
+        성별과 나이를 입력해 주세요.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    with st.form("demographics_form"):
+        gender = st.selectbox(
+            "성별",
+            options=["선택하세요", "여성", "남성", "기타", "응답하지 않음"],
+            index=0,
+        )
+        age = st.number_input(
+            "나이",
+            min_value=1,
+            max_value=120,
+            value=None,
+            step=1,
+            placeholder="나이를 숫자로 입력하세요",
+        )
+        submitted = st.form_submit_button("다음", type="primary")
+
+    if submitted:
+        if gender == "선택하세요":
+            st.error("성별을 선택해 주세요.")
+            return
+        if age is None:
+            st.error("나이를 입력해 주세요.")
+            return
+
+        st.session_state.gender = gender
+        st.session_state.age = int(age)
+        go_to("experiment_info")
 
 
 def page_experiment_info():
@@ -363,36 +410,101 @@ def page_video(video_items: list):
     total_rounds = len(video_items)
     video = current_video(video_items)
     preview_url = make_drive_preview_url(video["file_id"])
+    autoplay_url = f"{preview_url}?autoplay=1"
 
     st.markdown(
         f"""
         <div class="main-card">
             <div class="center-title">영상 {round_number} / {total_rounds}</div>
             <div class="body-text" style="text-align:center;">
-                아래 영상을 끝까지 시청해 주세요.<br>
-                영상 시청이 끝난 뒤 버튼을 눌러 설문으로 이동합니다.
+                영상 재생 시작 버튼을 누르면 고정점이 1000ms 동안 제시된 뒤 영상이 나타납니다.<br>
+                영상이 끝날 때까지 시청해 주세요.
             </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
-    iframe_html = f"""
-    <div class="video-frame">
+    video_stage_html = f"""
+    <div id="videoStage" style="
+        width:100%;
+        height:500px;
+        border:1px solid #d1d5db;
+        border-radius:16px;
+        overflow:hidden;
+        background:#ffffff;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        text-align:center;
+    ">
+        <div id="startScreen">
+            <button
+                id="startVideoButton"
+                type="button"
+                style="
+                    padding:14px 30px;
+                    border-radius:999px;
+                    border:0;
+                    background:#2563eb;
+                    color:white;
+                    font-size:18px;
+                    font-weight:800;
+                    cursor:pointer;
+                ">
+                영상 재생 시작
+            </button>
+            <div style="margin-top:14px; color:#6b7280; font-size:14px;">
+                버튼을 누른 뒤 고정점을 바라봐 주세요.
+            </div>
+        </div>
+
+        <div id="fixationScreen" style="
+            display:none;
+            width:100%;
+            height:100%;
+            align-items:center;
+            justify-content:center;
+            font-size:60px;
+            font-weight:800;
+            color:#111827;
+        ">
+            +
+        </div>
+
         <iframe
-            src="{preview_url}"
+            id="driveVideoFrame"
+            data-src="{autoplay_url}"
             width="100%"
             height="500"
             allow="autoplay; fullscreen"
             allowfullscreen
-            style="border:0; display:block;">
+            style="border:0; display:none; background:#000;">
         </iframe>
     </div>
+
+    <script>
+        const startButton = document.getElementById("startVideoButton");
+        const startScreen = document.getElementById("startScreen");
+        const fixationScreen = document.getElementById("fixationScreen");
+        const videoFrame = document.getElementById("driveVideoFrame");
+
+        startButton.addEventListener("click", function() {{
+            startScreen.style.display = "none";
+            fixationScreen.style.display = "flex";
+
+            setTimeout(function() {{
+                fixationScreen.style.display = "none";
+                videoFrame.style.display = "block";
+                videoFrame.src = videoFrame.dataset.src;
+            }}, 1000);
+        }});
+    </script>
     """
-    components.html(iframe_html, height=530)
+    components.html(video_stage_html, height=530)
 
     st.markdown(
-        '<div class="small-muted">Google Drive 권한이 제한되어 있으면, 참가자가 공유받은 Google 계정으로 로그인해야 영상이 보입니다.</div>',
+        '<div class="small-muted">Google Drive 권한이 제한되어 있으면, 참가자가 공유받은 Google 계정으로 로그인해야 영상이 보입니다. 일부 브라우저에서는 자동재생이 제한되어 영상 화면 안의 재생 버튼을 한 번 더 눌러야 할 수 있습니다.</div>',
         unsafe_allow_html=True,
     )
 
@@ -485,6 +597,8 @@ def page_survey(video_items: list):
             {
                 "timestamp": datetime.now().isoformat(timespec="seconds"),
                 "participant_id": st.session_state.participant_id,
+                "gender": st.session_state.get("gender", ""),
+                "age": st.session_state.get("age", ""),
                 "round_number": round_number,
                 "block_number": current_block_number(st.session_state.round_index),
                 "video_key": video["key"],
@@ -582,7 +696,9 @@ def main():
 
     page = st.session_state.get("page", "experiment_info")
 
-    if page == "experiment_info":
+    if page == "demographics":
+        page_demographics()
+    elif page == "experiment_info":
         page_experiment_info()
     elif page == "block_start":
         page_block_start()
