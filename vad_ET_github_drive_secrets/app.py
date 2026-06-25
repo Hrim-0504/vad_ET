@@ -273,8 +273,8 @@ def page_missing_secrets():
         """[app]
 sets_per_block = 25
 randomize_videos = true
-video_height = 720
-video_width_percent = 85
+video_height = 560
+video_width_percent = 70
 
 [videos]
 video_001 = "Google Drive 파일 ID 또는 공유 링크"
@@ -423,20 +423,21 @@ def page_video(video_items: list):
     # Google Drive 플레이어의 하단 컨트롤바가 영상 위를 덮는 문제를 줄이기 위해
     # 영상 박스는 높게 유지하고, 실제 영상 iframe의 가로 폭은 조금 좁혀서
     # 하단 컨트롤바가 영상 내용과 덜 겹치도록 합니다.
+    # 이번 버전은 영상의 가로 폭과 세로 높이를 모두 더 작게 줄였습니다.
     # 필요하면 Streamlit Secrets의 [app] 아래에서 조절할 수 있습니다.
-    # 예: video_height = 720, video_width_percent = 85
+    # 예: video_height = 560, video_width_percent = 70
     try:
-        video_height = int(get_app_setting("video_height", 720))
+        video_height = int(get_app_setting("video_height", 560))
     except Exception:
-        video_height = 720
+        video_height = 560
 
     try:
-        video_width_percent = int(get_app_setting("video_width_percent", 85))
+        video_width_percent = int(get_app_setting("video_width_percent", 70))
     except Exception:
-        video_width_percent = 85
+        video_width_percent = 70
 
     # 너무 작거나 너무 커지는 것을 방지합니다.
-    video_width_percent = max(60, min(video_width_percent, 100))
+    video_width_percent = max(45, min(video_width_percent, 100))
 
     component_height = video_height + 30
 
@@ -650,7 +651,7 @@ def page_video(video_items: list):
         영상이 끝나면 <b>스페이스바</b>를 눌러 설문 페이지로 이동해 주세요.<br>
         현재 영상 박스 높이: <b>{video_height}px</b><br>
         현재 영상 가로 폭: <b>{video_width_percent}%</b><br>
-        Google Drive 컨트롤바는 완전히 제거하기 어렵기 때문에, 영상 박스 높이는 유지하고 영상 가로 폭을 좁혀 하단 겹침을 줄였습니다.
+        Google Drive 컨트롤바는 완전히 제거하기 어렵기 때문에, 영상의 가로 폭과 세로 높이를 함께 줄였습니다.
         </div>
         """,
         unsafe_allow_html=True,
