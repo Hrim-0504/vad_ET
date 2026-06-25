@@ -486,7 +486,7 @@ def page_video(video_items: list):
 
     # 영상 페이지에서는 안내 문구를 제거하고 영상 영역만 보여줍니다.
     # 필요하면 Streamlit Secrets의 [app] 아래에서 조절할 수 있습니다.
-    # 예: video_height = 620, video_width_percent = 65, video_duration_seconds = 90
+    # 예: video_height = 620, video_width_percent = 65, control_cover_height = 170, video_duration_seconds = 90
     try:
         video_height = int(get_app_setting("video_height", 620))
     except Exception:
@@ -497,8 +497,16 @@ def page_video(video_items: list):
     except Exception:
         video_width_percent = 65
 
+    # Google Drive 플레이어 하단 게이지 바와 컨트롤 영역을 가리는 검정 박스 높이입니다.
+    # 필요하면 Streamlit Secrets의 [app] 아래에서 control_cover_height = 170 처럼 조절할 수 있습니다.
+    try:
+        control_cover_height = int(get_app_setting("control_cover_height", 170))
+    except Exception:
+        control_cover_height = 170
+
     # 너무 작거나 너무 커지는 것을 방지합니다.
     video_width_percent = max(45, min(video_width_percent, 100))
+    control_cover_height = max(0, min(control_cover_height, video_height))
     video_duration_seconds = get_video_duration_seconds(video["key"])
     video_end_extra_delay_seconds = get_video_end_extra_delay_seconds()
 
@@ -613,6 +621,20 @@ def page_video(video_items: list):
             background:rgba(0,0,0,0);
         "></div>
 
+        <!-- Google Drive 하단 게이지 바와 컨트롤바를 가리는 검정 박스입니다. -->
+        <div id="controlCover" style="
+            display:none;
+            position:absolute;
+            left:50%;
+            bottom:0;
+            width:{video_width_percent}%;
+            height:{control_cover_height}px;
+            transform:translateX(-50%);
+            z-index:8;
+            background:#000000;
+            pointer-events:none;
+        "></div>
+
         <div id="endMessage" style="
             display:none;
             position:absolute;
@@ -643,6 +665,7 @@ def page_video(video_items: list):
         const videoFrame = document.getElementById("driveVideoFrame");
         const videoStage = document.getElementById("videoStage");
         const cursorBlocker = document.getElementById("cursorBlocker");
+        const controlCover = document.getElementById("controlCover");
         const endMessage = document.getElementById("endMessage");
 
         let videoStarted = false;
@@ -727,6 +750,7 @@ def page_video(video_items: list):
                 videoFrame.src = videoFrame.dataset.src;
 
                 cursorBlocker.style.display = "block";
+                controlCover.style.display = "block";
                 videoStage.focus();
                 hideCursor();
 
