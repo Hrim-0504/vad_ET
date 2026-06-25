@@ -273,7 +273,7 @@ def page_missing_secrets():
         """[app]
 sets_per_block = 25
 randomize_videos = true
-video_height = 560
+video_height = 580
 video_width_percent = 70
 
 [videos]
