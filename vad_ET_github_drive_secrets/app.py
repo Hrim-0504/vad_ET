@@ -223,6 +223,15 @@ def get_video_duration_seconds(video_key: str) -> int:
     return max(1, min(int(duration), 3600))
 
 
+def get_video_end_extra_delay_seconds() -> int:
+    """영상 종료 뒤 안내 문구를 몇 초 더 늦게 띄울지 정합니다."""
+    try:
+        delay = int(get_app_setting("video_end_extra_delay_seconds", 5))
+    except Exception:
+        delay = 5
+    return max(0, min(delay, 60))
+
+
 def make_drive_preview_url(file_id: str) -> str:
     return f"https://drive.google.com/file/d/{file_id}/preview"
 
@@ -298,6 +307,7 @@ randomize_videos = true
 video_height = 620
 video_width_percent = 65
 video_duration_seconds = 90
+video_end_extra_delay_seconds = 5
 
 [videos]
 video_001 = "Google Drive 파일 ID 또는 공유 링크"
@@ -422,6 +432,29 @@ def page_experiment_info():
     st.markdown("</div>", unsafe_allow_html=True)
 
     if st.button("다음", type="primary"):
+        go_to("video_instruction")
+
+
+def page_video_instruction():
+    st.markdown('<div class="main-card">', unsafe_allow_html=True)
+    st.markdown('<div class="center-title">영상 시청 안내</div>', unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div class="body-text" style="text-align:center;">
+        영상 페이지에서는 영상만 표시됩니다.<br>
+        <br>
+        <b>영상 재생 시작</b> 버튼을 누르면 마우스 커서가 사라지고,<br>
+        고정점이 <b>1000ms</b> 동안 제시된 뒤 Google Drive 영상이 표시됩니다.<br>
+        <br>
+        영상을 끝까지 시청해 주세요.<br>
+        영상 종료 안내 문구가 나타난 뒤 <b>스페이스바</b>를 누르면 설문 페이지로 이동합니다.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown("</div>", unsafe_allow_html=True)
+
+    if st.button("다음", type="primary"):
         go_to("block_start")
 
 
@@ -451,8 +484,7 @@ def page_video(video_items: list):
     preview_url = make_drive_preview_url(video["file_id"])
     autoplay_url = f"{preview_url}?autoplay=1"
 
-    # Google Drive 플레이어의 하단 게이지 바가 영상 내용과 덜 겹치도록
-    # 실제 iframe의 가로 폭은 더 줄이고, 플레이어 박스의 세로 여백을 조금 늘렸습니다.
+    # 영상 페이지에서는 안내 문구를 제거하고 영상 영역만 보여줍니다.
     # 필요하면 Streamlit Secrets의 [app] 아래에서 조절할 수 있습니다.
     # 예: video_height = 620, video_width_percent = 65, video_duration_seconds = 90
     try:
@@ -468,19 +500,19 @@ def page_video(video_items: list):
     # 너무 작거나 너무 커지는 것을 방지합니다.
     video_width_percent = max(45, min(video_width_percent, 100))
     video_duration_seconds = get_video_duration_seconds(video["key"])
+    video_end_extra_delay_seconds = get_video_end_extra_delay_seconds()
 
     component_height = video_height + 30
 
+    # 영상 페이지에서는 위쪽 설명 카드를 표시하지 않습니다.
     st.markdown(
-        f"""
-        <div class="main-card">
-            <div class="center-title">영상 {round_number} / {total_rounds}</div>
-            <div class="body-text" style="text-align:center;">
-                영상 재생 시작 버튼을 누르면 마우스 커서가 사라지고,<br>
-                고정점이 1000ms 동안 제시된 뒤 Google Drive 영상이 표시됩니다.<br>
-                영상을 끝까지 시청해 주세요.
-            </div>
-        </div>
+        """
+        <style>
+        section.main > div.block-container {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0 !important;
+        }
+        </style>
         """,
         unsafe_allow_html=True,
     )
@@ -617,6 +649,7 @@ def page_video(video_items: list):
         let videoEnded = false;
         let endTimer = null;
         const videoDurationMs = {video_duration_seconds * 1000};
+        const videoEndExtraDelayMs = {video_end_extra_delay_seconds * 1000};
 
         function hideCursor() {{
             videoStage.style.cursor = "none";
@@ -700,7 +733,7 @@ def page_video(video_items: list):
                 if (endTimer) {{
                     clearTimeout(endTimer);
                 }}
-                endTimer = setTimeout(markVideoEnded, videoDurationMs);
+                endTimer = setTimeout(markVideoEnded, videoDurationMs + videoEndExtraDelayMs);
             }}, 1000);
         }});
 
@@ -925,6 +958,8 @@ def main():
         page_demographics()
     elif page == "experiment_info":
         page_experiment_info()
+    elif page == "video_instruction":
+        page_video_instruction()
     elif page == "block_start":
         page_block_start()
     elif page == "video":
