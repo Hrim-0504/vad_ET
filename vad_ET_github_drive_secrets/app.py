@@ -424,7 +424,7 @@ def page_video(video_items: list):
             <div class="center-title">영상 {round_number} / {total_rounds}</div>
             <div class="body-text" style="text-align:center;">
                 영상 재생 시작 버튼을 누르면 마우스 커서가 사라지고,<br>
-                고정점이 1000ms 동안 제시된 뒤 영상이 나타납니다.<br>
+                고정점이 1000ms 동안 제시된 뒤 Google Drive 영상이 전체 영역에 표시됩니다.<br>
                 영상이 끝나면 <b>스페이스바</b>를 눌러 다음 페이지로 이동해 주세요.
             </div>
         </div>
@@ -439,7 +439,7 @@ def page_video(video_items: list):
         border:1px solid #d1d5db;
         border-radius:16px;
         overflow:hidden;
-        background:#ffffff;
+        background:#000000;
         position:relative;
         display:flex;
         align-items:center;
@@ -454,7 +454,7 @@ def page_video(video_items: list):
             justify-content:center;
             flex-direction:column;
             background:#ffffff;
-            z-index:5;
+            z-index:10;
         ">
             <button
                 id="startVideoButton"
@@ -487,7 +487,7 @@ def page_video(video_items: list):
             color:#111827;
             background:#ffffff;
             cursor:none;
-            z-index:6;
+            z-index:11;
         ">
             +
         </div>
@@ -510,13 +510,20 @@ def page_video(video_items: list):
             ">
         </iframe>
 
+        <!--
+        이 투명 레이어는 영상을 자르거나 가리지 않습니다.
+        역할:
+        1) iframe 위에서 마우스 커서를 계속 숨김
+        2) 마우스 hover로 Google Drive 컨트롤바가 다시 뜨는 것을 줄임
+        3) 스페이스바 입력은 그대로 받을 수 있게 함
+        -->
         <div id="cursorBlocker" style="
             display:none;
             position:absolute;
             inset:0;
-            z-index:4;
+            z-index:5;
             cursor:none;
-            background:rgba(255,255,255,0);
+            background:rgba(0,0,0,0);
         "></div>
     </div>
 
@@ -576,7 +583,6 @@ def page_video(video_items: list):
             clickNextButton();
         }}
 
-        // 페이지가 새로 로드될 때는 커서를 보이게 초기화합니다.
         showCursor();
 
         startButton.addEventListener("click", function() {{
@@ -584,20 +590,25 @@ def page_video(video_items: list):
             videoStarted = true;
 
             hideCursor();
-
             fixationScreen.style.display = "flex";
 
             setTimeout(function() {{
                 fixationScreen.style.display = "none";
+
                 videoFrame.style.display = "block";
                 videoFrame.src = videoFrame.dataset.src;
 
-                // Google Drive iframe 위에서는 내부 커서가 다시 보일 수 있으므로
-                // 투명 레이어를 위에 올려 커서를 계속 숨깁니다.
+                // 영상은 자르지 않고 그대로 둔 채, 투명 레이어만 올립니다.
                 cursorBlocker.style.display = "block";
 
                 hideCursor();
             }}, 1000);
+        }});
+
+        cursorBlocker.addEventListener("mousemove", hideCursor);
+        cursorBlocker.addEventListener("mouseenter", hideCursor);
+        videoStage.addEventListener("mousemove", function() {{
+            if (videoStarted) hideCursor();
         }});
 
         document.addEventListener("keydown", handleSpacebar);
@@ -616,8 +627,7 @@ def page_video(video_items: list):
         """
         <div class="small-muted">
         영상이 끝나면 <b>스페이스바</b>를 눌러 설문 페이지로 이동해 주세요.<br>
-        Google Drive 미리보기 방식은 영상 종료 이벤트를 Streamlit으로 직접 전달하기 어렵기 때문에,
-        스페이스바 입력을 다음 페이지 이동 신호로 사용합니다.
+        영상은 자르지 않고 Google Drive 미리보기 화면을 그대로 표시합니다.
         </div>
         """,
         unsafe_allow_html=True,
