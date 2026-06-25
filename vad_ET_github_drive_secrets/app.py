@@ -31,6 +31,12 @@ VIDEO_ID_RE = re.compile(r"(?:/d/|id=)([A-Za-z0-9_-]+)")
 st.markdown(
     """
     <style>
+    html.vad-hide-cursor,
+    html.vad-hide-cursor *,
+    body.vad-hide-cursor,
+    body.vad-hide-cursor * {
+        cursor: none !important;
+    }
     .block-container {
         max-width: 980px;
         padding-top: 2.5rem;
@@ -417,7 +423,8 @@ def page_video(video_items: list):
         <div class="main-card">
             <div class="center-title">영상 {round_number} / {total_rounds}</div>
             <div class="body-text" style="text-align:center;">
-                영상 재생 시작 버튼을 누르면 고정점이 1000ms 동안 제시된 뒤 영상이 나타납니다.<br>
+                영상 재생 시작 버튼을 누르면 마우스 커서가 사라지고,<br>
+                고정점이 1000ms 동안 제시된 뒤 영상이 나타납니다.<br>
                 영상이 끝날 때까지 시청해 주세요.
             </div>
         </div>
@@ -468,6 +475,7 @@ def page_video(video_items: list):
             font-size:60px;
             font-weight:800;
             color:#111827;
+            cursor:none;
         ">
             +
         </div>
@@ -479,7 +487,7 @@ def page_video(video_items: list):
             height="500"
             allow="autoplay; fullscreen"
             allowfullscreen
-            style="border:0; display:none; background:#000;">
+            style="border:0; display:none; background:#000; cursor:none;">
         </iframe>
     </div>
 
@@ -488,29 +496,72 @@ def page_video(video_items: list):
         const startScreen = document.getElementById("startScreen");
         const fixationScreen = document.getElementById("fixationScreen");
         const videoFrame = document.getElementById("driveVideoFrame");
+        const videoStage = document.getElementById("videoStage");
+
+        function hideCursor() {{
+            videoStage.style.cursor = "none";
+            fixationScreen.style.cursor = "none";
+            videoFrame.style.cursor = "none";
+
+            try {{
+                window.parent.document.documentElement.classList.add("vad-hide-cursor");
+                window.parent.document.body.classList.add("vad-hide-cursor");
+            }} catch (e) {{
+                // Streamlit component iframe 환경에 따라 parent 접근이 막힐 수 있습니다.
+            }}
+        }}
+
+        function showCursor() {{
+            videoStage.style.cursor = "default";
+
+            try {{
+                window.parent.document.documentElement.classList.remove("vad-hide-cursor");
+                window.parent.document.body.classList.remove("vad-hide-cursor");
+            }} catch (e) {{
+                // Streamlit component iframe 환경에 따라 parent 접근이 막힐 수 있습니다.
+            }}
+        }}
+
+        // 페이지가 새로 로드될 때는 커서를 보이게 초기화합니다.
+        showCursor();
 
         startButton.addEventListener("click", function() {{
             startScreen.style.display = "none";
+
+            hideCursor();
+
             fixationScreen.style.display = "flex";
 
             setTimeout(function() {{
                 fixationScreen.style.display = "none";
                 videoFrame.style.display = "block";
                 videoFrame.src = videoFrame.dataset.src;
+
+                hideCursor();
             }}, 1000);
         }});
+
+        // 사용자가 다음 페이지로 이동하면 커서가 다시 보이도록 정리합니다.
+        window.addEventListener("beforeunload", showCursor);
+        window.addEventListener("pagehide", showCursor);
     </script>
     """
     components.html(video_stage_html, height=530)
 
     st.markdown(
-        '<div class="small-muted">Google Drive 권한이 제한되어 있으면, 참가자가 공유받은 Google 계정으로 로그인해야 영상이 보입니다. 일부 브라우저에서는 자동재생이 제한되어 영상 화면 안의 재생 버튼을 한 번 더 눌러야 할 수 있습니다.</div>',
+        """
+        <div class="small-muted">
+        Google Drive 권한이 제한되어 있으면, 참가자가 공유받은 Google 계정으로 로그인해야 영상이 보입니다.<br>
+        일부 브라우저에서는 자동재생이 제한되어 영상 화면 안의 재생 버튼을 한 번 더 눌러야 할 수 있습니다.<br>
+        Google Drive 미리보기 방식은 영상 종료 이벤트를 Streamlit으로 직접 전달하지 못하므로,
+        영상이 끝난 뒤 아래 버튼을 누르면 다음 페이지에서 커서가 다시 보입니다.
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
     if st.button("영상을 끝까지 봤습니다", type="primary"):
         go_to("survey")
-
 
 def image_if_exists(path: Path, caption: str):
     if path.exists():
